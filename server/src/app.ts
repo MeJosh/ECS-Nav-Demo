@@ -24,6 +24,9 @@ interface ClientCommand {
   type?: string;
   x?: number;
   y?: number;
+  entityId?: string;
+  fromEntityId?: string;
+  toEntityId?: string;
 }
 
 interface ParticipantConnection {
@@ -51,6 +54,13 @@ function parsePosition(payload: DestinationPayload): Position | undefined {
     return undefined;
   }
   return { x: payload.x, y: payload.y };
+}
+
+function parsePathConnection(payload: ClientCommand): { fromEntityId: string; toEntityId: string } | undefined {
+  if (typeof payload.fromEntityId !== "string" || typeof payload.toEntityId !== "string") {
+    return undefined;
+  }
+  return { fromEntityId: payload.fromEntityId, toEntityId: payload.toEntityId };
 }
 
 function serialize(message: ServerMessage): string {
@@ -113,6 +123,51 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
   );
 
+  app.post<{ Body: DestinationPayload }>("/api/path-nodes", async (request, reply) => {
+    const position = parsePosition(request.body);
+    if (!position) {
+      return reply.code(400).send({ error: "Expected numeric x and y." });
+    }
+
+    const entityId = world.createPathNode(position);
+    broadcastSnapshot();
+    return { entityId };
+  });
+
+  app.delete<{ Params: { entityId: string } }>("/api/path-nodes/:entityId", async (request, reply) => {
+    if (!world.removePathNode(request.params.entityId)) {
+      return reply.code(404).send({ error: "Unknown path node." });
+    }
+
+    broadcastSnapshot();
+    return { ok: true };
+  });
+
+  app.post<{ Body: ClientCommand }>("/api/path-connections", async (request, reply) => {
+    const connection = parsePathConnection(request.body);
+    if (!connection) {
+      return reply.code(400).send({ error: "Expected fromEntityId and toEntityId." });
+    }
+    if (!world.connectPathNodes(connection)) {
+      return reply.code(400).send({ error: "Expected two different path nodes." });
+    }
+
+    broadcastSnapshot();
+    return { ok: true, ...connection };
+  });
+
+  app.delete<{ Params: { fromEntityId: string; toEntityId: string } }>(
+    "/api/path-connections/:fromEntityId/:toEntityId",
+    async (request, reply) => {
+      if (!world.disconnectPathNodes(request.params)) {
+        return reply.code(404).send({ error: "Unknown path connection." });
+      }
+
+      broadcastSnapshot();
+      return { ok: true };
+    }
+  );
+
   app.get("/ws", { websocket: true }, (socket) => {
     const participantId = `participant-${nextParticipantNumber++}`;
     const color = participantColors[(nextParticipantNumber - 2) % participantColors.length];
@@ -136,15 +191,47 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     socket.addEventListener("message", (event: MessageEvent) => {
       const command = JSON.parse(String(event.data)) as ClientCommand;
-      if (command.type !== "destination.set") {
+      if (command.type === "destination.set") {
+        const position = parsePosition(command as DestinationPayload);
+        if (!position) {
+          return;
+        }
+        world.setParticipantDestination(participantId, position);
+        broadcastSnapshot();
         return;
       }
-      const position = parsePosition(command as DestinationPayload);
-      if (!position) {
+
+      if (command.type === "pathNode.create") {
+        const position = parsePosition(command as DestinationPayload);
+        if (!position) {
+          return;
+        }
+        world.createPathNode(position);
+        broadcastSnapshot();
         return;
       }
-      world.setParticipantDestination(participantId, position);
-      broadcastSnapshot();
+
+      if (command.type === "pathNode.delete" && typeof command.entityId === "string") {
+        if (world.removePathNode(command.entityId)) {
+          broadcastSnapshot();
+        }
+        return;
+      }
+
+      if (command.type === "pathConnection.create") {
+        const connection = parsePathConnection(command);
+        if (connection && world.connectPathNodes(connection)) {
+          broadcastSnapshot();
+        }
+        return;
+      }
+
+      if (command.type === "pathConnection.delete") {
+        const connection = parsePathConnection(command);
+        if (connection && world.disconnectPathNodes(connection)) {
+          broadcastSnapshot();
+        }
+      }
     });
 
     socket.addEventListener("close", () => {

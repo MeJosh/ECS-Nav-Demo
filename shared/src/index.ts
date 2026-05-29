@@ -31,6 +31,19 @@ export interface ParticipantOwnership {
   participantId: string;
 }
 
+export interface PathNode {
+  preferredPath: true;
+}
+
+export interface PathConnections {
+  entityIds: EntityId[];
+}
+
+export interface PathAttachment {
+  fromEntityId: EntityId;
+  toEntityId: EntityId;
+}
+
 export interface Components {
   position: Record<EntityId, Position>;
   destinationReference: Record<EntityId, DestinationReference>;
@@ -38,6 +51,9 @@ export interface Components {
   appearance: Record<EntityId, Appearance>;
   name: Record<EntityId, Name>;
   participantOwnership: Record<EntityId, ParticipantOwnership>;
+  pathNode: Record<EntityId, PathNode>;
+  pathConnections: Record<EntityId, PathConnections>;
+  pathAttachment: Record<EntityId, PathAttachment>;
 }
 
 export interface SystemStates {

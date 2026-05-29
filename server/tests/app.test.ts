@@ -58,4 +58,46 @@ describe("Fastify API", () => {
     expect(destinationId).toBeDefined();
     expect(destinationId ? snapshot.components.position[destinationId] : undefined).toEqual({ x: 50, y: 60 });
   });
+
+  test("creates path nodes through the API", async () => {
+    const world = createWorld({ movementPerStep: 5 });
+    const app = await buildApp({ world });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/path-nodes",
+      payload: { x: 10, y: 20 }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const { entityId } = response.json() as { entityId: string };
+    expect(world.getComponent("position", entityId)).toEqual({ x: 10, y: 20 });
+    expect(world.getComponent("pathConnections", entityId)).toEqual({ entityIds: [] });
+  });
+
+  test("connects and disconnects path nodes through the API", async () => {
+    const world = createWorld({ movementPerStep: 5 });
+    const first = world.createPathNode({ x: 0, y: 0 });
+    const second = world.createPathNode({ x: 10, y: 0 });
+    const app = await buildApp({ world });
+
+    const connectResponse = await app.inject({
+      method: "POST",
+      url: "/api/path-connections",
+      payload: { fromEntityId: first, toEntityId: second }
+    });
+
+    expect(connectResponse.statusCode).toBe(200);
+    expect(world.getComponent("pathConnections", first)).toEqual({ entityIds: [second] });
+    expect(world.getComponent("pathConnections", second)).toEqual({ entityIds: [first] });
+
+    const disconnectResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/path-connections/${first}/${second}`
+    });
+
+    expect(disconnectResponse.statusCode).toBe(200);
+    expect(world.getComponent("pathConnections", first)).toEqual({ entityIds: [] });
+    expect(world.getComponent("pathConnections", second)).toEqual({ entityIds: [] });
+  });
 });

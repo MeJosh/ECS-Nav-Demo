@@ -40,6 +40,30 @@ _Avoid_: Destination point, target coordinate
 A relationship from a moving entity to a **Destination Entity**. A **Destination Reference** means the moving entity aims at the referenced entity's **Position**, but an entity may still move without one.
 _Avoid_: Destination component as coordinates, target vector
 
+**Preferred Path**:
+A shared navigable graph of **Path Nodes** and **Path Connections** in the **Simulation World** that **Moving Entities** may prefer while travelling to a **Destination Entity**. A **Preferred Path** is not the destination itself and does not strictly bind movement.
+_Avoid_: Regular path, road, route
+
+**Path Node**:
+An entity or point in the **Simulation World** that can belong to a **Preferred Path**. A **Path Node** may have zero or more **Path Connections**.
+_Avoid_: Note, waypoint, path point
+
+**Path Connection**:
+A bidirectional relationship between two **Path Nodes** in a **Preferred Path**. A **Path Connection** represents adjacency between path nodes, not ownership by a participant.
+_Avoid_: Edge, line, segment
+
+**Path Connectivity**:
+The binary state of whether two different **Path Nodes** are joined by a **Path Connection**. The same pair of path nodes is either connected or not connected.
+_Avoid_: Duplicate connection, repeated edge, self-connection
+
+**Path Route**:
+A connected traversal through one or more **Path Connections** between two **Path Nodes**. A **Path Route** is available only when the relevant path nodes belong to the same connected portion of the **Preferred Path**.
+_Avoid_: Route list, pathfinding result, path plan
+
+**Path Attachment**:
+The state of a **Moving Entity** using a **Path Route** between **Path Nodes**. A **Moving Entity** receives path-specific movement benefits only while it has a **Path Attachment**.
+_Avoid_: On road, snapped to path, following line
+
 **Movement Vector**:
 The per-step displacement a **Moving Entity** intends to travel during a **Simulation Step**. A **Movement Vector** may be derived from a **Destination Reference** or supplied independently.
 _Avoid_: Velocity, heading
@@ -122,6 +146,18 @@ Dev: "Does the moving entity store its destination as x/y coordinates?"
 
 Domain expert: "No. It stores a Destination Reference to a Destination Entity, and that entity's Position is the target."
 
+Dev: "Is a preferred path the same thing as the destination?"
+
+Domain expert: "No. A Preferred Path is a shared navigable graph of Path Nodes and Path Connections that Moving Entities may prefer while travelling to a Destination Entity."
+
+Dev: "Can a Moving Entity use any two Path Nodes as a route?"
+
+Domain expert: "Only when those Path Nodes are connected by a Path Route. Disconnected portions of the Preferred Path are separate choices."
+
+Dev: "Does a Moving Entity move faster whenever it is near a Preferred Path?"
+
+Domain expert: "No. It receives path-specific movement benefits only while it has a Path Attachment."
+
 Dev: "If two participants are connected, can they see each other's movement?"
 
 Domain expert: "Yes. Each participant has a Controlled Entity Pair in the shared Simulation World, and every client renders the same authoritative state."
@@ -169,6 +205,26 @@ Domain expert: "The Movement System changes Position. The Steering System only p
 Dev: "If a destination moves while an entity is already moving, does the entity keep its old vector?"
 
 Domain expert: "No. The Steering System recalculates the Movement Vector from current positions each Simulation Step."
+
+Dev: "If a destination moves while a Moving Entity has a Path Attachment, does it keep the old Path Route?"
+
+Domain expert: "No. Preferred Path use remains responsive to the current Simulation World, including moved Destination Entities and changed Path Routes."
+
+Dev: "Can a Path Connection remain after one of its Path Nodes is removed?"
+
+Domain expert: "No. A Path Connection requires both of its Path Nodes, and Preferred Path changes are reflected in later movement decisions."
+
+Dev: "Can two Path Nodes have several Path Connections between them?"
+
+Domain expert: "No. Path Connectivity is binary: two different Path Nodes are either connected or not connected."
+
+Dev: "When editing the Preferred Path, what happens if a client input could both select a Path Node and affect empty space?"
+
+Domain expert: "Path Node interactions take precedence over Path Connection interactions, and Path Connection interactions take precedence over empty-space interactions."
+
+Dev: "Does dragging from a Path Node also move my Destination Entity?"
+
+Domain expert: "No. A drag that begins on a Path Node is a Preferred Path edit gesture; ordinary empty-space input still changes a participant's Destination Entity."
 
 Dev: "Does rendering advance the simulation?"
 

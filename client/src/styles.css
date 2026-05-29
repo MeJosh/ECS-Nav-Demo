@@ -34,6 +34,31 @@ body {
   opacity: 0.7;
 }
 
+.path-connection {
+  stroke: #5f6f52;
+  stroke-linecap: round;
+  stroke-width: 4;
+}
+
+.path-connection-hit {
+  cursor: pointer;
+  opacity: 0;
+  stroke: #000;
+  stroke-linecap: round;
+  stroke-width: 16;
+}
+
+.path-node {
+  cursor: grab;
+  fill: #f7f4ed;
+  stroke: #5f6f52;
+  stroke-width: 3;
+}
+
+.path-node:active {
+  cursor: grabbing;
+}
+
 .moving-entity {
   stroke: #1f2933;
   stroke-width: 1.5;

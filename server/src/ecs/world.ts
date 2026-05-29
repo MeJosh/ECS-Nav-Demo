@@ -5,6 +5,9 @@ import type {
   EntityId,
   MovementVector,
   Name,
+  PathAttachment,
+  PathConnections,
+  PathNode,
   ParticipantOwnership,
   Position,
   SystemStates,
@@ -26,6 +29,11 @@ export interface ParticipantPair {
   destinationEntityId: EntityId;
 }
 
+export interface PathConnectionInput {
+  fromEntityId: EntityId;
+  toEntityId: EntityId;
+}
+
 export type ComponentName = keyof Components;
 
 export type ComponentValue<K extends ComponentName> = Components[K][EntityId];
@@ -37,6 +45,9 @@ type ComponentInput = Partial<{
   appearance: Appearance;
   name: Name;
   participantOwnership: ParticipantOwnership;
+  pathNode: PathNode;
+  pathConnections: PathConnections;
+  pathAttachment: PathAttachment;
 }>;
 
 export interface ComponentQuery {
@@ -56,6 +67,10 @@ export interface World {
   createParticipantPair(input: ParticipantPairInput): ParticipantPair;
   setParticipantDestination(participantId: string, position: Position): ParticipantPair | undefined;
   removeParticipant(participantId: string): void;
+  createPathNode(position: Position): EntityId;
+  removePathNode(entityId: EntityId): boolean;
+  connectPathNodes(input: PathConnectionInput): boolean;
+  disconnectPathNodes(input: PathConnectionInput): boolean;
   setSystemEnabled(system: keyof SystemStates, enabled: boolean): void;
   nextTick(): number;
   snapshot(): WorldSnapshot;
@@ -67,7 +82,10 @@ const componentNames: ComponentName[] = [
   "movementVector",
   "appearance",
   "name",
-  "participantOwnership"
+  "participantOwnership",
+  "pathNode",
+  "pathConnections",
+  "pathAttachment"
 ];
 
 export function createWorld(options: WorldOptions): World {
@@ -79,7 +97,10 @@ export function createWorld(options: WorldOptions): World {
     movementVector: {},
     appearance: {},
     name: {},
-    participantOwnership: {}
+    participantOwnership: {},
+    pathNode: {},
+    pathConnections: {},
+    pathAttachment: {}
   };
   const systems: SystemStates = {
     steering: true,
@@ -123,6 +144,16 @@ export function createWorld(options: WorldOptions): World {
     for (const componentName of componentNames) {
       removeComponent(componentName, entityId);
     }
+  }
+
+  function ensurePathConnections(entityId: EntityId): PathConnections {
+    const existing = getComponent("pathConnections", entityId);
+    if (existing) {
+      return existing;
+    }
+    const created = { entityIds: [] };
+    setComponent("pathConnections", entityId, created);
+    return created;
   }
 
   function query({ required }: ComponentQuery): EntityId[] {
@@ -181,6 +212,74 @@ export function createWorld(options: WorldOptions): World {
     }
   }
 
+  function createPathNode(position: Position): EntityId {
+    return addComponents({
+      position: { ...position },
+      pathNode: { preferredPath: true },
+      pathConnections: { entityIds: [] },
+      appearance: {
+        color: "#1f2933",
+        shape: "circle",
+        radius: 9
+      },
+      name: { value: "Path node" }
+    });
+  }
+
+  function isPathNode(entityId: EntityId): boolean {
+    return Boolean(getComponent("pathNode", entityId));
+  }
+
+  function removePathNode(entityId: EntityId): boolean {
+    if (!isPathNode(entityId)) {
+      return false;
+    }
+    const connections = ensurePathConnections(entityId);
+    for (const connectedEntityId of connections.entityIds) {
+      const connectedConnections = ensurePathConnections(connectedEntityId);
+      connectedConnections.entityIds = connectedConnections.entityIds.filter((id) => id !== entityId);
+      setComponent("pathConnections", connectedEntityId, connectedConnections);
+    }
+    removeEntity(entityId);
+    return true;
+  }
+
+  function connectPathNodes({ fromEntityId, toEntityId }: PathConnectionInput): boolean {
+    if (fromEntityId === toEntityId || !isPathNode(fromEntityId) || !isPathNode(toEntityId)) {
+      return false;
+    }
+
+    const fromConnections = ensurePathConnections(fromEntityId);
+    const toConnections = ensurePathConnections(toEntityId);
+    if (!fromConnections.entityIds.includes(toEntityId)) {
+      fromConnections.entityIds.push(toEntityId);
+      fromConnections.entityIds.sort();
+    }
+    if (!toConnections.entityIds.includes(fromEntityId)) {
+      toConnections.entityIds.push(fromEntityId);
+      toConnections.entityIds.sort();
+    }
+    setComponent("pathConnections", fromEntityId, fromConnections);
+    setComponent("pathConnections", toEntityId, toConnections);
+    return true;
+  }
+
+  function disconnectPathNodes({ fromEntityId, toEntityId }: PathConnectionInput): boolean {
+    if (fromEntityId === toEntityId || !isPathNode(fromEntityId) || !isPathNode(toEntityId)) {
+      return false;
+    }
+
+    const fromConnections = ensurePathConnections(fromEntityId);
+    const toConnections = ensurePathConnections(toEntityId);
+    const wasConnected =
+      fromConnections.entityIds.includes(toEntityId) || toConnections.entityIds.includes(fromEntityId);
+    fromConnections.entityIds = fromConnections.entityIds.filter((id) => id !== toEntityId);
+    toConnections.entityIds = toConnections.entityIds.filter((id) => id !== fromEntityId);
+    setComponent("pathConnections", fromEntityId, fromConnections);
+    setComponent("pathConnections", toEntityId, toConnections);
+    return wasConnected;
+  }
+
   function snapshot(): WorldSnapshot {
     return {
       tick,
@@ -202,6 +301,10 @@ export function createWorld(options: WorldOptions): World {
     createParticipantPair,
     setParticipantDestination,
     removeParticipant,
+    createPathNode,
+    removePathNode,
+    connectPathNodes,
+    disconnectPathNodes,
     setSystemEnabled(system, enabled) {
       systems[system] = enabled;
     },
