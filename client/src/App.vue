@@ -11,6 +11,7 @@ interface ParticipantState {
 const snapshot = ref<WorldSnapshot | null>(null);
 const participant = ref<ParticipantState | null>(null);
 const socket = ref<WebSocket | null>(null);
+const serverUrl = import.meta.env.VITE_SERVER_URL?.trim() || window.location.origin;
 
 const positionedEntities = computed(() => {
   if (!snapshot.value) {
@@ -36,8 +37,9 @@ const circles = computed(() =>
 );
 
 function connect() {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+  const wsUrl = new URL("/ws", serverUrl);
+  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(wsUrl);
   socket.value = ws;
 
   ws.addEventListener("message", (event) => {
