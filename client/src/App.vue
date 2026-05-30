@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import type { EntityId, ServerMessage, WorldSnapshot } from "@ecs-nav-demo/shared";
+import type { ClientCommand, EntityId, ServerMessage, WorldSnapshot } from "@ecs-nav-demo/shared";
+import { createSimulationSession, type SimulationMode, type SimulationSession } from "./simulationSession";
 
 interface ParticipantState {
   participantId: string;
@@ -10,8 +11,9 @@ interface ParticipantState {
 
 const snapshot = ref<WorldSnapshot | null>(null);
 const participant = ref<ParticipantState | null>(null);
-const socket = ref<WebSocket | null>(null);
+const session = ref<SimulationSession | null>(null);
 const serverUrl = import.meta.env.VITE_SERVER_URL?.trim() || window.location.origin;
+const simulationMode = (import.meta.env.VITE_SIMULATION_MODE ?? "remote") as SimulationMode;
 
 const positionedEntities = computed(() => {
   if (!snapshot.value) {
@@ -116,32 +118,29 @@ const pathConnectionPreview = computed(() => {
   };
 });
 
-function sendCommand(command: Record<string, unknown>) {
-  if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+function handleServerMessage(message: ServerMessage) {
+  if (message.type === "participant.joined") {
+    participant.value = {
+      participantId: message.participantId,
+      movingEntityId: message.movingEntityId,
+      destinationEntityId: message.destinationEntityId
+    };
     return;
   }
-  socket.value.send(JSON.stringify(command));
+  if (message.type === "world.snapshot") {
+    snapshot.value = message.snapshot;
+  }
+}
+
+function sendCommand(command: ClientCommand) {
+  session.value?.sendCommand(command);
 }
 
 function connect() {
-  const wsUrl = new URL("/ws", serverUrl);
-  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(wsUrl);
-  socket.value = ws;
-
-  ws.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as ServerMessage;
-    if (message.type === "participant.joined") {
-      participant.value = {
-        participantId: message.participantId,
-        movingEntityId: message.movingEntityId,
-        destinationEntityId: message.destinationEntityId
-      };
-      return;
-    }
-    if (message.type === "world.snapshot") {
-      snapshot.value = message.snapshot;
-    }
+  session.value = createSimulationSession({
+    mode: simulationMode,
+    serverUrl,
+    onMessage: handleServerMessage
   });
 }
 
@@ -243,7 +242,7 @@ function deletePathConnection(fromEntityId: EntityId, toEntityId: EntityId) {
 onMounted(connect);
 
 onBeforeUnmount(() => {
-  socket.value?.close();
+  session.value?.dispose();
 });
 </script>
 

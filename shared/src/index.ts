@@ -81,3 +81,35 @@ export interface WorldSnapshotMessage {
 }
 
 export type ServerMessage = ParticipantJoinedMessage | WorldSnapshotMessage;
+
+export interface SetDestinationCommand extends Position {
+  type: "destination.set";
+}
+
+export interface CreatePathNodeCommand extends Position {
+  type: "pathNode.create";
+}
+
+export interface DeletePathNodeCommand {
+  type: "pathNode.delete";
+  entityId: EntityId;
+}
+
+export interface CreatePathConnectionCommand {
+  type: "pathConnection.create";
+  fromEntityId: EntityId;
+  toEntityId: EntityId;
+}
+
+export interface DeletePathConnectionCommand {
+  type: "pathConnection.delete";
+  fromEntityId: EntityId;
+  toEntityId: EntityId;
+}
+
+export type ClientCommand =
+  | SetDestinationCommand
+  | CreatePathNodeCommand
+  | DeletePathNodeCommand
+  | CreatePathConnectionCommand
+  | DeletePathConnectionCommand;

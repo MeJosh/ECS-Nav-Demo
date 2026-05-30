@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { createWorld } from "@ecs-nav-demo/simulation";
 import { buildApp } from "../src/app";
-import { createWorld } from "../src/ecs/world";
 
 describe("Fastify API", () => {
   test("returns world snapshots", async () => {

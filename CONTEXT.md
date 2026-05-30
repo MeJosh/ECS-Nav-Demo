@@ -8,6 +8,10 @@ This context describes the language used for an ECS-based movement and pathfindi
 The authoritative collection of entities, components, and system-derived state for the demo. There is one active **Simulation World** that clients observe and influence through explicit input.
 _Avoid_: Client world, local world
 
+**Simulation Host**:
+The runtime participant that owns and advances the active **Simulation World**. A **Simulation Host** may be a dedicated server or a single-user local runtime, but there is still only one authoritative owner for any active **Simulation World**.
+_Avoid_: Client owner, peer server
+
 **Entity**:
 An identity in the **Simulation World** that exists only because at least one component refers to it. An **Entity** is not an object and cannot exist without components.
 _Avoid_: Entity object, empty entity
@@ -27,6 +31,10 @@ _Avoid_: Simulation runner, game engine
 **Input Command**:
 A client-originated request to change some part of the **Simulation World**, such as assigning an entity destination. The server decides how an **Input Command** affects authoritative state.
 _Avoid_: Client update, local mutation
+
+**Command Handling**:
+The act of applying an **Input Command** to the authoritative **Simulation World**. **Command Handling** belongs to the active **Simulation Host**, whether that host is dedicated or local.
+_Avoid_: UI mutation, direct client state change
 
 **State Update**:
 A server-originated description of authoritative **Simulation World** state. Clients receive **State Updates** so they can render without polling aggressively.
@@ -229,3 +237,15 @@ Domain expert: "No. A drag that begins on a Path Node is a Preferred Path edit g
 Dev: "Does rendering advance the simulation?"
 
 Domain expert: "No. The server advances the Simulation World through Simulation Steps; clients render the State Updates they receive."
+
+Dev: "Can the same demo run without connecting to a dedicated server?"
+
+Domain expert: "Yes, if a local runtime acts as the Simulation Host. The Client still renders and sends input; the Simulation Host is the owner of the Simulation World."
+
+Dev: "In local mode, does the user stop being a Participant?"
+
+Domain expert: "No. Local mode still has one Participant with one Controlled Entity Pair; only the Simulation Host changes."
+
+Dev: "Are local-mode clicks a different kind of input from server-mode clicks?"
+
+Domain expert: "No. Both produce Input Commands. The difference is which Simulation Host handles those commands."

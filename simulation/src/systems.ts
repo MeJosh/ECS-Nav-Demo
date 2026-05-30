@@ -1,5 +1,5 @@
 import type { EntityId, Position } from "@ecs-nav-demo/shared";
-import type { World } from "./world";
+import type { World } from "./world.ts";
 
 const pathSpeedMultiplier = 2;
 const positionTolerance = 0.001;

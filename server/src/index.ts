@@ -1,10 +1,11 @@
-import { buildApp, startSimulation } from "./app";
-import { createWorld } from "./ecs/world";
+import { buildApp, startSimulation } from "./app.ts";
+import { createSimulationHost } from "@ecs-nav-demo/simulation";
 
-const port = Number(Bun.env.PORT ?? 3001);
-const world = createWorld({ movementPerStep: 5 });
-const app = await buildApp({ world });
+const port = Number(process.env.PORT ?? 3001);
+const listenHost = process.env.HOST ?? "0.0.0.0";
+const simulationHost = createSimulationHost({ movementPerStep: 5 });
+const app = await buildApp({ host: simulationHost });
 
-startSimulation(app, world);
+startSimulation(app, simulationHost);
 
-await app.listen({ port, host: "0.0.0.0" });
+await app.listen({ port, host: listenHost });

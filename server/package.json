@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "HOST=127.0.0.1 node src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ecs-nav-demo/simulation": "workspace:*",
     "@ecs-nav-demo/shared": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "@fastify/websocket": "^11.0.1",

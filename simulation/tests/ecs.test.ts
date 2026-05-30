@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createWorld } from "../src/ecs/world";
-import { runEnabledSystems, runMovementSystem, runSteeringSystem } from "../src/ecs/systems";
+import { createWorld, runEnabledSystems, runMovementSystem, runSteeringSystem } from "../src";
 
 describe("ECS movement systems", () => {
   test("steering writes a per-step movement vector toward the destination", () => {

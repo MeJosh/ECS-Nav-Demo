@@ -1,14 +1,14 @@
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
-import type { Position, ServerMessage, SystemStates } from "@ecs-nav-demo/shared";
-import { runEnabledSystems } from "./ecs/systems";
-import { createWorld, type World } from "./ecs/world";
+import { createSimulationHost, type SimulationHost, type World } from "@ecs-nav-demo/simulation";
+import type { ClientCommand, EntityId, Position, ServerMessage, SystemStates } from "@ecs-nav-demo/shared";
 
 const systemIds = ["steering", "movement"] as const;
 type SystemId = (typeof systemIds)[number];
 
 interface BuildAppOptions {
+  host?: SimulationHost;
   world?: World;
 }
 
@@ -20,7 +20,7 @@ interface SystemPayload {
   enabled?: boolean;
 }
 
-interface ClientCommand {
+interface ClientCommandPayload {
   type?: string;
   x?: number;
   y?: number;
@@ -34,17 +34,6 @@ interface ParticipantConnection {
   participantId: string;
 }
 
-const participantColors = [
-  "#2f80ed",
-  "#eb5757",
-  "#27ae60",
-  "#f2994a",
-  "#9b51e0",
-  "#00a6a6"
-];
-
-let nextParticipantNumber = 1;
-
 function isSystemId(value: string): value is SystemId {
   return systemIds.includes(value as SystemId);
 }
@@ -56,11 +45,34 @@ function parsePosition(payload: DestinationPayload): Position | undefined {
   return { x: payload.x, y: payload.y };
 }
 
-function parsePathConnection(payload: ClientCommand): { fromEntityId: string; toEntityId: string } | undefined {
+function parsePathConnection(payload: ClientCommandPayload): { fromEntityId: string; toEntityId: string } | undefined {
   if (typeof payload.fromEntityId !== "string" || typeof payload.toEntityId !== "string") {
     return undefined;
   }
   return { fromEntityId: payload.fromEntityId, toEntityId: payload.toEntityId };
+}
+
+function parseClientCommand(payload: ClientCommandPayload): ClientCommand | undefined {
+  if (payload.type === "destination.set") {
+    const position = parsePosition(payload as DestinationPayload);
+    return position ? { type: payload.type, ...position } : undefined;
+  }
+
+  if (payload.type === "pathNode.create") {
+    const position = parsePosition(payload as DestinationPayload);
+    return position ? { type: payload.type, ...position } : undefined;
+  }
+
+  if (payload.type === "pathNode.delete" && typeof payload.entityId === "string") {
+    return { type: payload.type, entityId: payload.entityId as EntityId };
+  }
+
+  if (payload.type === "pathConnection.create" || payload.type === "pathConnection.delete") {
+    const connection = parsePathConnection(payload);
+    return connection ? { type: payload.type, ...connection } : undefined;
+  }
+
+  return undefined;
 }
 
 function serialize(message: ServerMessage): string {
@@ -68,7 +80,8 @@ function serialize(message: ServerMessage): string {
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const world = options.world ?? createWorld({ movementPerStep: 5 });
+  const host = options.host ?? createSimulationHost({ world: options.world });
+  const { world } = host;
   const app = Fastify({ logger: true });
   const connections = new Map<string, ParticipantConnection>();
 
@@ -99,7 +112,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return reply.code(400).send({ error: "Expected boolean enabled value." });
       }
 
-      world.setSystemEnabled(systemId, request.body.enabled);
+      host.setSystemEnabled(systemId, request.body.enabled);
       broadcastSnapshot();
       return { id: systemId, enabled: world.systems[systemId] };
     }
@@ -113,13 +126,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return reply.code(400).send({ error: "Expected numeric x and y." });
       }
 
-      const pair = world.setParticipantDestination(request.params.participantId, position);
-      if (!pair) {
+      if (!host.applyCommand(request.params.participantId, { type: "destination.set", ...position })) {
         return reply.code(404).send({ error: "Unknown participant." });
       }
 
       broadcastSnapshot();
-      return { ok: true, ...pair };
+      return { ok: true };
     }
   );
 
@@ -143,7 +155,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { ok: true };
   });
 
-  app.post<{ Body: ClientCommand }>("/api/path-connections", async (request, reply) => {
+  app.post<{ Body: ClientCommandPayload }>("/api/path-connections", async (request, reply) => {
     const connection = parsePathConnection(request.body);
     if (!connection) {
       return reply.code(400).send({ error: "Expected fromEntityId and toEntityId." });
@@ -169,74 +181,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   );
 
   app.get("/ws", { websocket: true }, (socket) => {
-    const participantId = `participant-${nextParticipantNumber++}`;
-    const color = participantColors[(nextParticipantNumber - 2) % participantColors.length];
-    const pair = world.createParticipantPair({
-      participantId,
-      color,
-      position: { x: 400, y: 300 }
-    });
+    const joined = host.joinParticipant();
 
-    connections.set(participantId, { socket, participantId });
-    socket.send(
-      serialize({
-        type: "participant.joined",
-        participantId,
-        movingEntityId: pair.movingEntityId,
-        destinationEntityId: pair.destinationEntityId
-      })
-    );
+    connections.set(joined.participantId, { socket, participantId: joined.participantId });
+    socket.send(serialize(joined));
     socket.send(serialize({ type: "world.snapshot", snapshot: world.snapshot() }));
     broadcastSnapshot();
 
     socket.addEventListener("message", (event: MessageEvent) => {
-      const command = JSON.parse(String(event.data)) as ClientCommand;
-      if (command.type === "destination.set") {
-        const position = parsePosition(command as DestinationPayload);
-        if (!position) {
-          return;
-        }
-        world.setParticipantDestination(participantId, position);
+      const command = parseClientCommand(JSON.parse(String(event.data)) as ClientCommandPayload);
+      if (command && host.applyCommand(joined.participantId, command)) {
         broadcastSnapshot();
-        return;
-      }
-
-      if (command.type === "pathNode.create") {
-        const position = parsePosition(command as DestinationPayload);
-        if (!position) {
-          return;
-        }
-        world.createPathNode(position);
-        broadcastSnapshot();
-        return;
-      }
-
-      if (command.type === "pathNode.delete" && typeof command.entityId === "string") {
-        if (world.removePathNode(command.entityId)) {
-          broadcastSnapshot();
-        }
-        return;
-      }
-
-      if (command.type === "pathConnection.create") {
-        const connection = parsePathConnection(command);
-        if (connection && world.connectPathNodes(connection)) {
-          broadcastSnapshot();
-        }
-        return;
-      }
-
-      if (command.type === "pathConnection.delete") {
-        const connection = parsePathConnection(command);
-        if (connection && world.disconnectPathNodes(connection)) {
-          broadcastSnapshot();
-        }
       }
     });
 
     socket.addEventListener("close", () => {
-      connections.delete(participantId);
-      world.removeParticipant(participantId);
+      connections.delete(joined.participantId);
+      host.leaveParticipant(joined.participantId);
       broadcastSnapshot();
     });
   });
@@ -244,9 +205,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   return app;
 }
 
-export function startSimulation(app: FastifyInstance, world: World, intervalMs = 50): Timer {
+export function startSimulation(app: FastifyInstance, host: SimulationHost, intervalMs = 50): Timer {
   return setInterval(() => {
-    runEnabledSystems(world);
+    host.step();
     const broadcast = app.broadcastSnapshot as (() => void) | undefined;
     broadcast?.();
   }, intervalMs);
