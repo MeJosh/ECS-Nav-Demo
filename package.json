@@ -14,8 +14,12 @@
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck"
   },
+  "overrides": {
+    "esbuild": "0.25.0"
+  },
   "devDependencies": {
     "@types/bun": "^1.2.15",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "esbuild": "0.25.0"
   }
 }
