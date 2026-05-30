@@ -48,6 +48,17 @@ body {
   stroke-width: 16;
 }
 
+.path-connection-preview {
+  opacity: 0.5;
+  stroke: #5f6f52;
+  stroke-linecap: round;
+  stroke-width: 4;
+}
+
+.path-connection-preview-valid {
+  opacity: 1;
+}
+
 .path-node {
   cursor: grab;
   fill: #f7f4ed;

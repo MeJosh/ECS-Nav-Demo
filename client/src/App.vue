@@ -78,7 +78,43 @@ const pathConnections = computed(() => {
 });
 
 const dragStartPathNodeId = ref<EntityId | null>(null);
+const dragPointerPosition = ref<{ x: number; y: number } | null>(null);
+const dragHoverPathNodeId = ref<EntityId | null>(null);
 const suppressNextClick = ref(false);
+
+const pathNodePositions = computed(
+  () => new Map(pathNodes.value.map((entity) => [entity.entityId, entity.position]))
+);
+
+const pathConnectionSets = computed(
+  () => new Map(pathNodes.value.map((entity) => [entity.entityId, new Set(entity.pathConnections?.entityIds ?? [])]))
+);
+
+const pathConnectionPreview = computed(() => {
+  const fromEntityId = dragStartPathNodeId.value;
+  if (!fromEntityId) {
+    return null;
+  }
+  const from = pathNodePositions.value.get(fromEntityId);
+  if (!from || !dragPointerPosition.value) {
+    return null;
+  }
+
+  const toEntityId = dragHoverPathNodeId.value;
+  const to = toEntityId ? pathNodePositions.value.get(toEntityId) : undefined;
+  const canConnect = Boolean(
+    toEntityId &&
+      to &&
+      toEntityId !== fromEntityId &&
+      !pathConnectionSets.value.get(fromEntityId)?.has(toEntityId)
+  );
+
+  return {
+    from,
+    to: canConnect && to ? to : dragPointerPosition.value,
+    canConnect
+  };
+});
 
 function sendCommand(command: Record<string, unknown>) {
   if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
@@ -141,6 +177,8 @@ function startPathConnection(event: PointerEvent, entityId: EntityId) {
     return;
   }
   dragStartPathNodeId.value = entityId;
+  dragPointerPosition.value = { x: event.clientX, y: event.clientY };
+  dragHoverPathNodeId.value = entityId;
 }
 
 function finishPathConnection(entityId: EntityId) {
@@ -148,19 +186,50 @@ function finishPathConnection(entityId: EntityId) {
     return;
   }
   suppressNextClick.value = true;
-  sendCommand({
-    type: "pathConnection.create",
-    fromEntityId: dragStartPathNodeId.value,
-    toEntityId: entityId
-  });
-  dragStartPathNodeId.value = null;
+  if (
+    entityId !== dragStartPathNodeId.value &&
+    !pathConnectionSets.value.get(dragStartPathNodeId.value)?.has(entityId)
+  ) {
+    sendCommand({
+      type: "pathConnection.create",
+      fromEntityId: dragStartPathNodeId.value,
+      toEntityId: entityId
+    });
+  }
+  clearPathConnectionDrag();
 }
 
 function cancelPathConnectionDrag() {
   if (dragStartPathNodeId.value) {
     suppressNextClick.value = true;
   }
+  clearPathConnectionDrag();
+}
+
+function clearPathConnectionDrag() {
   dragStartPathNodeId.value = null;
+  dragPointerPosition.value = null;
+  dragHoverPathNodeId.value = null;
+}
+
+function updatePathConnectionPreview(event: PointerEvent) {
+  if (!dragStartPathNodeId.value) {
+    return;
+  }
+  dragPointerPosition.value = { x: event.clientX, y: event.clientY };
+}
+
+function hoverPathConnectionTarget(entityId: EntityId) {
+  if (!dragStartPathNodeId.value) {
+    return;
+  }
+  dragHoverPathNodeId.value = entityId;
+}
+
+function leavePathConnectionTarget(entityId: EntityId) {
+  if (dragHoverPathNodeId.value === entityId) {
+    dragHoverPathNodeId.value = null;
+  }
 }
 
 function deletePathConnection(fromEntityId: EntityId, toEntityId: EntityId) {
@@ -179,7 +248,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="viewport" @click="setDestination" @contextmenu.prevent="createPathNode" @pointerup="cancelPathConnectionDrag">
+  <main
+    class="viewport"
+    @click="setDestination"
+    @contextmenu.prevent="createPathNode"
+    @pointermove="updatePathConnectionPreview"
+    @pointerup="cancelPathConnectionDrag"
+  >
     <svg class="world" aria-label="ECS navigation world">
       <rect class="background" width="100%" height="100%" />
 
@@ -205,6 +280,18 @@ onBeforeUnmount(() => {
           class="path-connection"
           pointer-events="none"
         />
+        <line
+          v-if="pathConnectionPreview"
+          :x1="pathConnectionPreview.from.x"
+          :y1="pathConnectionPreview.from.y"
+          :x2="pathConnectionPreview.to.x"
+          :y2="pathConnectionPreview.to.y"
+          :class="[
+            'path-connection-preview',
+            { 'path-connection-preview-valid': pathConnectionPreview.canConnect }
+          ]"
+          pointer-events="none"
+        />
       </g>
 
       <circle
@@ -217,6 +304,8 @@ onBeforeUnmount(() => {
         @click.stop
         @pointerdown.stop="startPathConnection($event, entity.entityId)"
         @pointerup.stop="finishPathConnection(entity.entityId)"
+        @pointerenter="hoverPathConnectionTarget(entity.entityId)"
+        @pointerleave="leavePathConnectionTarget(entity.entityId)"
         @contextmenu.prevent.stop="deletePathNode(entity.entityId)"
       >
         <title>{{ entity.name?.value ?? entity.entityId }}</title>
